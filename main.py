@@ -9,9 +9,9 @@ def main():
     cursor = conn.cursor()
     cursor.execute("use yelp_db")
     
-    #Q2(cursor)
-    #Q3(cursor)
-    #Q4(cursor)
+    Q2(cursor)
+    Q3(cursor)
+    Q4(cursor)
     Q5(cursor)
     
     conn.close()
