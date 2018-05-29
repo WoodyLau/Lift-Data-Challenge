@@ -13,6 +13,7 @@ def main():
     Q3(cursor)
     Q4(cursor)
     Q5(cursor)
+    Q6()
     
     conn.close()
     
@@ -31,6 +32,7 @@ def connect():
     return conn
 
 def Q2(cursor):
+    print "\nQuestion 2: Top 20 cities with most reviews and best ratings"
     cursor.execute("select city,stars,review_count from business")
     rows = cursor.fetchall()
     
@@ -44,11 +46,13 @@ def Q2(cursor):
     starsReviews = df.groupby(['city']).agg({'reviews':sum,'stars':'mean'})
     starsReviews['Total'] = starsReviews.reviews * starsReviews.stars
     starsReviews = starsReviews.sort_values('Total',ascending=False).head(20)
-    
+    print "Top 20 sorted by just number of reviews"
     print justReviews
+    print "Top 20 sorted by number of reviews and star score"
     print starsReviews
     
 def Q3(cursor):
+    print "\nQuestion 3: Number of users that reviewed Mon Ami Gabi in the past year"
     cursor.execute("select id,name from business")
     rows = cursor.fetchall()
     business_id = filter(lambda x: x[1] == "Mon Ami Gabi", rows)[0][0]
@@ -65,6 +69,7 @@ def Q3(cursor):
     print numberUsers
     
 def Q4(cursor):
+    print "\nQuestion 4: Most common words in the business Chipotle Mexican Grill"
     cursor.execute("select id,name from business")
     rows = cursor.fetchall()
     business_id = filter(lambda x: x[1] == "Chipotle Mexican Grill", rows)[0][0]
@@ -93,6 +98,7 @@ def Q4(cursor):
     print df2
     
 def Q5(cursor):
+    print "\nQuestion 5: Percentage of users who reviewed Mon Ami Gabi and also reviewed ten restaurants in the US"
     cursor.execute("select id,name from business")
     rows = cursor.fetchall()
     business_id = filter(lambda x: x[1] == "Mon Ami Gabi", rows)[0][0]
@@ -125,8 +131,16 @@ def Q5(cursor):
     
     cursor.execute("select count(*) from user")
     total = cursor.fetchall()[0][0]
+    print "Percentage of total number of users"
     print str(count/total*100)+'%'
+    print "Percentage of users that reviewed Mon Ami Gabi"
     print str(count/totalBusiness*100)+'%'
+    
+def Q6():
+    print "\nQuestion 6:"
+    print "There should be some normalizing of the star value, based off of the average star level of the user"
+    print "There is also the option of modifying the star score slightly based off the useful, funny, or cool ratings"
+    print "\nInstead of arranging by city, it might be useful to figure out popularity based off of latitude and longitude"
     
 if __name__ == '__main__':
     main()
