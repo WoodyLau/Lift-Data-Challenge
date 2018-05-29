@@ -142,5 +142,86 @@ def Q6():
     print "There is also the option of modifying the star score slightly based off the useful, funny, or cool ratings"
     print "\nInstead of arranging by city, it might be useful to figure out popularity based off of latitude and longitude"
     
+def output():
+    output = """
+Connected to MySQL database
+
+Question 2: Top 20 cities with most reviews and best ratings
+Top 20 sorted by just number of reviews
+                 reviews
+city
+Las Vegas        1604173
+Phoenix           576709
+Toronto           430923
+Scottsdale        308529
+Charlotte         237115
+Pittsburgh        179471
+Henderson         166884
+Tempe             162772
+Mesa              130883
+Montreal          122620
+Chandler          122343
+Gilbert            97204
+Cleveland          92280
+Madison            86614
+Glendale           76293
+Edinburgh          48838
+Mississauga        43147
+Peoria             42581
+Markham            38840
+North Las Vegas    37928
+Top 20 sorted by number of reviews and star score
+                 reviews     stars         Total
+city
+Las Vegas        1604173  3.709916  5.951347e+06
+Phoenix           576709  3.673793  2.118710e+06
+Toronto           430923  3.487272  1.502746e+06
+Scottsdale        308529  3.948529  1.218236e+06
+Charlotte         237115  3.571554  8.468690e+05
+Pittsburgh        179471  3.629819  6.514473e+05
+Henderson         166884  3.789362  6.323838e+05
+Tempe             162772  3.729885  6.071209e+05
+Mesa              130883  3.636024  4.758938e+05
+Chandler          122343  3.753380  4.591998e+05
+Montreal          122620  3.706604  4.545037e+05
+Gilbert            97204  3.838875  3.731540e+05
+Cleveland          92280  3.589103  3.312024e+05
+Madison            86614  3.635543  3.148889e+05
+Glendale           76293  3.622583  2.763777e+05
+Edinburgh          48838  3.787099  1.849544e+05
+Peoria             42581  3.700762  1.575821e+05
+Mississauga        43147  3.306493  1.426653e+05
+North Las Vegas    37928  3.482771  1.320945e+05
+Markham            38840  3.299552  1.281546e+05
+
+Question 3: Number of users that reviewed Mon Ami Gabi in the past year
+551
+
+Question 4: Most common words in the business Chipotle Mexican Grill
+the     52
+i       47
+and     33
+it      31
+a       26
+to      24
+that    24
+is      23
+my      21
+was     21
+Name: 0, dtype: int64
+
+Question 5: Percentage of users who reviewed Mon Ami Gabi and also reviewed ten restaurants in the US
+Percentage of total number of users
+0.178870236882%
+Percentage of users that reviewed Mon Ami Gabi
+32.2195055691%
+
+Question 6:
+There should be some normalizing of the star value, based off of the average star level of the user
+There is also the option of modifying the star score slightly based off the useful, funny, or cool ratings
+
+Instead of arranging by city, it might be useful to figure out popularity based off of latitude and longitude
+"""
+    
 if __name__ == '__main__':
     main()
