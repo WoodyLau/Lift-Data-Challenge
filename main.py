@@ -1,227 +1,229 @@
-import mysql.connector
-from mysql.connector import Error
+import sqlite3
+from sqlite3 import Error
 import pandas as pd
 import datetime
 import time
+import json
+from functools import reduce
+import scipy.stats
 
 def main():
-    conn = connect()
-    cursor = conn.cursor()
-    cursor.execute("use yelp_db")
-    
-    Q2(cursor)
-    Q3(cursor)
-    Q4(cursor)
-    Q5(cursor)
-    Q6()
-    
-    conn.close()
-    
+	conn = connect()
+	cursor = conn.cursor()
+	
+	Q2(cursor)
+	Q3(cursor)
+	Q4(cursor)
+	Q5(cursor)
+	Q6(cursor)
+	
+	conn.close()
+	
 def connect():
-    try:
-        conn = mysql.connector.connect(host='localhost',
-                                       database='yelp_db',
-                                       user='root',
-                                       password='password')
-        if conn.is_connected():
-            print('Connected to MySQL database')
+	try:
+		conn = sqlite3.connect(r"D:\\Work\\yelp_dataset.db")
  
-    except Error as e:
-        print(e)
+	except Error as e:
+		print(e)
 
-    return conn
+	return conn
 
 def Q2(cursor):
-    print "\nQuestion 2: Top 20 cities with most reviews and best ratings"
-    cursor.execute("select city,stars,review_count from business")
-    rows = cursor.fetchall()
-    
-    df = pd.DataFrame(rows)
-    df.columns = ['city', 'stars', 'reviews']
-    
-    #A dataframe of the top 20 resturants sorted by number of reviews
-    justReviews = df.groupby(['city']).agg({'reviews':sum}).sort_values('reviews',ascending=False).head(20)
-    
-    #A dataframe of the top 20 resturants sorted by number of reviews, multiplied by star score
-    starsReviews = df.groupby(['city']).agg({'reviews':sum,'stars':'mean'})
-    starsReviews['Total'] = starsReviews.reviews * starsReviews.stars
-    starsReviews = starsReviews.sort_values('Total',ascending=False).head(20)
-    print "Top 20 sorted by just number of reviews"
-    print justReviews
-    print "Top 20 sorted by number of reviews and star score"
-    print starsReviews
-    
+	print("\nQuestion 2: Top 10 restaurants in Toronto with the highest popularity")
+	cursor.execute("select name,CAST(stars as REAL), CAST(review_count as int) from business where city='Toronto' and categories like '%Restaurants%'")
+	rows = cursor.fetchall()
+	
+	df = pd.DataFrame(rows)
+	df.columns = ['name', 'stars', 'reviews']
+	
+	#A dataframe of the top 20 resturants sorted by number of reviews
+	justReviews = df.sort_values(['reviews','stars'],ascending=False).head(10)
+	
+	#A dataframe of the top 20 resturants sorted by number of reviews, multiplied by star score
+	starsReviews = df
+	starsReviews['Total'] = starsReviews.reviews * starsReviews.stars
+	starsReviews = starsReviews.sort_values('Total',ascending=False).head(10)
+	print("Top 20 sorted by just number of reviews")
+	print(justReviews)
+	print("Top 20 sorted by number of reviews and star score")
+	print(starsReviews)
+	
 def Q3(cursor):
-    print "\nQuestion 3: Number of users that reviewed Mon Ami Gabi in the past year"
-    cursor.execute("select id,name from business")
-    rows = cursor.fetchall()
-    business_id = filter(lambda x: x[1] == "Mon Ami Gabi", rows)[0][0]
-    
-    date = datetime.datetime.now() - datetime.timedelta(days=365)
-    date.strftime('%Y-%m-%d')
-    
-    cursor.execute("select user_id,date from review where business_id='%s'"%business_id)
-    df = pd.DataFrame(cursor.fetchall())
-    df.columns = ['user_id', 'date']
-    df = df[(df['date'] > date)]
-    
-    numberUsers = len(df.index)
-    print numberUsers
-    
+	print("\nQuestion 3: Number of Canadian residents that reviewed Mon Ami Gabi in the past year")
+	cursor.execute("select user_id, state, count() from review, business where review.business_id=business.business_id group by user_id,state")
+	rows = cursor.fetchall()
+	df = pd.DataFrame(rows)
+	df.columns = ['user', 'state', 'reviews']
+	df['country'] = df.apply(lambda row: 1 if row.state in ['ON', 'AB', 'QC', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'PE', 'SK', 'YT'] else 0, axis=1)
+	with_canadian_review = set(df[df['country']==1]['user'])
+	df = df[df['user'].isin(with_canadian_review)]
+	user_countries = df.groupby(['user','country']).sum().reset_index()
+	possible_canadians=user_countries[['user']].drop_duplicates()
+	possible_canadians = pd.merge(user_countries[user_countries['country']==1],possible_canadians,on='user')[['user','reviews']].rename(columns={'reviews':'canadian_reviews'})
+	possible_canadians = pd.merge(user_countries[user_countries['country']==0],possible_canadians,on='user')[['user','canadian_reviews','reviews']].rename(columns={'reviews':'not_canadian_reviews'})
+	possible_canadians['proportion'] = possible_canadians['canadian_reviews']/(possible_canadians['canadian_reviews']+possible_canadians['not_canadian_reviews'])
+	canadians = set(possible_canadians[possible_canadians['proportion']>0]['user'])
+
+	date = datetime.datetime.now() - datetime.timedelta(days=365)
+	date.strftime('%Y-%m-%d')
+	
+	cursor.execute("select user_id,date from review where business_id in (select business_id from business where name='Mon Ami Gabi')")
+	df = pd.DataFrame(cursor.fetchall())
+	df.columns = ['user_id', 'date']
+	users=set(df['user_id'])
+	df['date'] = df['date'].apply(lambda x: datetime.datetime.strptime(x,'%Y-%m-%d %H:%M:%S'))
+	df = df.groupby(['user_id']).max().reset_index()
+	test=df
+	df = df[(df['date'] > date) & (df['user_id'].isin(canadians))]
+	
+	numberUsers = len(df.index)
+	
+	print(numberUsers)
+	
 def Q4(cursor):
-    print "\nQuestion 4: Most common words in the business Chipotle Mexican Grill"
-    cursor.execute("select id,name from business")
-    rows = cursor.fetchall()
-    business_id = filter(lambda x: x[1] == "Chipotle Mexican Grill", rows)[0][0]
-    
-    cursor.execute("select text from review where business_id='%s'"%business_id)
-    rows = cursor.fetchall()
-    df = pd.DataFrame(rows)
-    df.columns = ['text']
-    df = df.head(10)
-    
-    allReviews = df['text'].tolist()
-    # Turn into a list of all the words used, split by spaces
-    allWords = reduce(lambda x,y: x+y, map(lambda x: x.split(), allReviews))
-    allWords = map(lambda x: x.lower().replace(".","")
-                                      .replace(",","")
-                                      .replace("(","")
-                                      .replace(")","")
-                                      .replace("!","")
-                                      .replace("@","")
-                                      .replace("&","")
-                                      .replace("-","")
-                                      .replace(":",""), allWords)
-    allWords = filter(lambda x: x != "", allWords)
+	print("\nQuestion 4: Most common words in the business Chipotle Mexican Grill")
+	cursor.execute("select text from review where business_id in (select business_id from business where name='Chipotle Mexican Grill')")
+	rows = cursor.fetchall()
+	df = pd.DataFrame(rows)
+	df.columns = ['text']
+	
+	allReviews = df['text'].tolist()
+	# Turn into a list of all the words used, split by spaces
+	allWords = reduce(lambda x,y: x+y, map(lambda x: x.split(), allReviews))
+	allWords = map(lambda x: x.lower().replace(".","")
+									  .replace(",","")
+									  .replace("(","")
+									  .replace(")","")
+									  .replace("!","")
+									  .replace("@","")
+									  .replace("&","")
+									  .replace("-","")
+									  .replace(":",""), allWords)
+									  
+	filtered_words = ["","the","a","i","and","for","nor","but","or","yet","so",
+					  "of","with","at","from","into","to","in","for","on","by",
+					  "about","is","was","are","it","this","be","my","me","you",
+					  "they","that","have","had","has","not","there","as","when","why"]
+	allWords = filter(lambda x: x not in filtered_words, allWords)
  
-    df2 = pd.DataFrame(allWords)[0].value_counts().head(10)
-    print df2
-    
+	df2 = pd.DataFrame(list(allWords))[0].value_counts().head(10)
+	print(df2)
+	
 def Q5(cursor):
-    print "\nQuestion 5: Percentage of users who reviewed Mon Ami Gabi and also reviewed ten restaurants in the US"
-    cursor.execute("select id,name from business")
-    rows = cursor.fetchall()
-    business_id = filter(lambda x: x[1] == "Mon Ami Gabi", rows)[0][0]
-    
-    # Get the users that went to Mon Ami Gabi
-    cursor.execute("select user_id from review where business_id='%s'"%business_id)
-    all = map(lambda x: x[0],cursor.fetchall())
-    users = "'"+ "', '".join(all) + "'"
-    totalBusiness = len(all)
-    
-    cursor.execute("select state_code from us_locations.us_states")
-    usStates = "'"+ "', '".join(map(lambda x: x[0],cursor.fetchall())) + "'"
-    
-    # Get the businesses those users went to
-    cursor.execute("select business_id from review where (user_id in (%s))"%users)
-    df = pd.DataFrame(cursor.fetchall()).drop_duplicates()
-    df.columns = ['business_id']
-    allBusinesses = "'"+ "', '".join(df.business_id.values) + "'"
-    
-    # Check if the businesses are in the US
-    cursor.execute("select id from business where (id in (%s)) and (state in (%s))"%(allBusinesses,usStates))
-    usBusinesses = "'"+ "', '".join(map(lambda x: x[0],cursor.fetchall())) + "'"
-    
-    # Get the number of people who went to Mon Ami Gabi and 10 US businesses
-    cursor.execute("select business_id,user_id from review where (user_id in (%s)) and (business_id in (%s))"%(users,usBusinesses))
-    df = pd.DataFrame(cursor.fetchall()).drop_duplicates()
-    df.columns = ['business_id', 'user_id']
-    counts = df.user_id.value_counts()
-    count = float(len(counts[counts >= 10].index))
-    
-    cursor.execute("select count(*) from user")
-    total = cursor.fetchall()[0][0]
-    print "Percentage of total number of users"
-    print str(count/total*100)+'%'
-    print "Percentage of users that reviewed Mon Ami Gabi"
-    print str(count/totalBusiness*100)+'%'
-    
-def Q6():
-    print "\nQuestion 6:"
-    print "There should be some normalizing of the star value, based off of the average star level of the user"
-    print "There is also the option of modifying the star score slightly based off the useful, funny, or cool ratings"
-    print "\nInstead of arranging by city, it might be useful to figure out popularity based off of latitude and longitude"
-    
+	print("\nQuestion 5: Percentage of users who reviewed Mon Ami Gabi and also reviewed ten restaurants in ON")
+
+	# Get the users that went to Mon Ami Gabi
+	cursor.execute("select distinct(user_id) from review where business_id in (select business_id from business where name='Mon Ami Gabi')")
+	all = list(map(lambda x: x[0],cursor.fetchall()))
+	totalBusiness = len(all)
+	users = "'"+ "', '".join(all) + "'"
+	
+
+	ONBusinesses = "select distinct(business_id) from business where state='ON' and categories like '%Restaurants%'"
+	
+	# Get the number of people who went to Mon Ami Gabi and 10 ON businesses
+	cursor.execute("select user_id,business_id from review where (user_id in (%s)) and (business_id in (%s))"%(users,ONBusinesses))
+	df = pd.DataFrame(cursor.fetchall()).drop_duplicates()
+	df.columns = ['user_id','business_id']
+	counts = df.user_id.value_counts()
+	count = float(len(counts[counts >= 10].index))
+	
+	cursor.execute("select count(*) from user")
+	total = cursor.fetchall()[0][0]
+	print("Percentage of total number of users")
+	print(str(count/total*100)+'%')
+	print("Percentage of users that reviewed Mon Ami Gabi")
+	print(str(count/totalBusiness*100)+'%')
+	
+def Q6(cursor):
+	print("\nQuestion 6:")
+	print("Whether providing takeout affects ratings")
+	cursor.execute("select stars from business where attributes like '%RestaurantsTakeOut_: _True%' and categories like '%Restaurants%' and categories like '%Chinese%'")
+	with_takeout = pd.DataFrame(cursor.fetchall())
+	cursor.execute("select stars from business where (attributes like '%RestaurantsTakeOut_: _False%' or attributes not like '%RestaurantsTakeOut%') and categories like '%Restaurants%' and categories like '%Chinese%'")
+	without_takeout = pd.DataFrame(cursor.fetchall())
+	print("Mean with takeout")
+	print(with_takeout[0].apply(float).mean())
+	print("Mean without takeout")
+	print(without_takeout[0].apply(float).mean())
+	print(scipy.stats.ks_2samp(list(with_takeout),list(without_takeout)))
+	
+	print("Whether serving alcohol affects their ratings.")
+	cursor.execute("select stars from business where attributes like '%Alcohol%' and attributes not like '%Alcohol_: _u_none%' and attributes not like '%Alcohol_: __none%' and attributes not like '%Alcohol_: _none%' and categories like '%Restaurants%' and categories like '%Nightlife%'")
+	with_alcohol = pd.DataFrame(cursor.fetchall())
+	cursor.execute("select stars from business where (attributes like '%Alcohol_: _u_none%' or attributes like '%Alcohol_: __none%' or attributes like '%Alcohol_: _none%') and categories like '%Restaurants%' and categories like '%Nightlife%'")
+	without_alcohol = pd.DataFrame(cursor.fetchall())
+	print("Mean with alcohol")
+	print(with_alcohol[0].apply(float).mean())
+	print("Mean without alcohol")
+	print(without_alcohol[0].apply(float).mean())
+	print(scipy.stats.ks_2samp(list(with_alcohol),list(without_alcohol)))
+	
+	
 def output():
-    output = """
-Connected to MySQL database
-
-Question 2: Top 20 cities with most reviews and best ratings
+	output = """
+Question 2: Top 10 restaurants in Toronto with the highest popularity
 Top 20 sorted by just number of reviews
-                 reviews
-city
-Las Vegas        1604173
-Phoenix           576709
-Toronto           430923
-Scottsdale        308529
-Charlotte         237115
-Pittsburgh        179471
-Henderson         166884
-Tempe             162772
-Mesa              130883
-Montreal          122620
-Chandler          122343
-Gilbert            97204
-Cleveland          92280
-Madison            86614
-Glendale           76293
-Edinburgh          48838
-Mississauga        43147
-Peoria             42581
-Markham            38840
-North Las Vegas    37928
+                                   name  stars  reviews
+5228          Pai Northern Thai Kitchen    4.5     2121
+6698                      Khao San Road    4.0     1410
+7370             KINKA IZAKAYA ORIGINAL    4.0     1397
+4730       Seven Lives Tacos Y Mariscos    4.5     1152
+4138                       Banh Mi Boys    4.5     1045
+7318  Uncle Tetsu's Japanese Cheesecake    3.5      939
+958                 Momofuku Noodle Bar    3.0      897
+7254              Salad King Restaurant    3.5      876
+2200                          Gusto 101    4.0      836
+3030       Insomnia Restaurant & Lounge    4.0      795
 Top 20 sorted by number of reviews and star score
-                 reviews     stars         Total
-city
-Las Vegas        1604173  3.709916  5.951347e+06
-Phoenix           576709  3.673793  2.118710e+06
-Toronto           430923  3.487272  1.502746e+06
-Scottsdale        308529  3.948529  1.218236e+06
-Charlotte         237115  3.571554  8.468690e+05
-Pittsburgh        179471  3.629819  6.514473e+05
-Henderson         166884  3.789362  6.323838e+05
-Tempe             162772  3.729885  6.071209e+05
-Mesa              130883  3.636024  4.758938e+05
-Chandler          122343  3.753380  4.591998e+05
-Montreal          122620  3.706604  4.545037e+05
-Gilbert            97204  3.838875  3.731540e+05
-Cleveland          92280  3.589103  3.312024e+05
-Madison            86614  3.635543  3.148889e+05
-Glendale           76293  3.622583  2.763777e+05
-Edinburgh          48838  3.787099  1.849544e+05
-Peoria             42581  3.700762  1.575821e+05
-Mississauga        43147  3.306493  1.426653e+05
-North Las Vegas    37928  3.482771  1.320945e+05
-Markham            38840  3.299552  1.281546e+05
+                                   name  stars  reviews   Total
+5228          Pai Northern Thai Kitchen    4.5     2121  9544.5
+6698                      Khao San Road    4.0     1410  5640.0
+7370             KINKA IZAKAYA ORIGINAL    4.0     1397  5588.0
+4730       Seven Lives Tacos Y Mariscos    4.5     1152  5184.0
+4138                       Banh Mi Boys    4.5     1045  4702.5
+2200                          Gusto 101    4.0      836  3344.0
+7318  Uncle Tetsu's Japanese Cheesecake    3.5      939  3286.5
+3030       Insomnia Restaurant & Lounge    4.0      795  3180.0
+4439                     Sansotei Ramen    4.0      794  3176.0
+1857                             Byblos    4.5      700  3150.0
 
-Question 3: Number of users that reviewed Mon Ami Gabi in the past year
-551
+Question 3: Number of Canadian residents that reviewed Mon Ami Gabi in the past year
+2
 
 Question 4: Most common words in the business Chipotle Mexican Grill
-the     52
-i       47
-and     33
-it      31
-a       26
-to      24
-that    24
-is      23
-my      21
-was     21
+chipotle    8721
+food        7184
+location    4886
+burrito     4026
+get         3832
+one         3748
+time        3635
+out         3602
+like        3577
+just        3489
 Name: 0, dtype: int64
 
-Question 5: Percentage of users who reviewed Mon Ami Gabi and also reviewed ten restaurants in the US
+Question 5: Percentage of users who reviewed Mon Ami Gabi and also reviewed ten restaurants in ON
 Percentage of total number of users
-0.178870236882%
+0.0036649323392407974%
 Percentage of users that reviewed Mon Ami Gabi
-32.2195055691%
+0.7186489399928134%
 
 Question 6:
-There should be some normalizing of the star value, based off of the average star level of the user
-There is also the option of modifying the star score slightly based off the useful, funny, or cool ratings
-
-Instead of arranging by city, it might be useful to figure out popularity based off of latitude and longitude
+Whether providing takeout affects ratings
+Mean with takeout
+3.3211538461538463
+Mean without takeout
+3.2051526717557253
+Ks_2sampResult(statistic=0.0, pvalue=1.0)
+Whether serving alcohol affects their ratings.
+Mean with alcohol
+3.4952297769416822
+Mean without alcohol
+3.6763005780346822
+Ks_2sampResult(statistic=0.0, pvalue=1.0)
 """
-    
+	
 if __name__ == '__main__':
-    main()
+	main()
