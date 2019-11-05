@@ -31,9 +31,7 @@ def connect():
 def Q2(cursor):
 	print("\nQuestion 2: Top 10 restaurants in Toronto with the highest popularity")
 	cursor.execute("select name,CAST(stars as REAL), CAST(review_count as int) from business where city='Toronto' and categories like '%Restaurants%'")
-	rows = cursor.fetchall()
-	
-	df = pd.DataFrame(rows)
+	df = pd.DataFrame(cursor.fetchall())
 	df.columns = ['name', 'stars', 'reviews']
 	
 	#A dataframe of the top 20 resturants sorted by number of reviews
@@ -51,8 +49,7 @@ def Q2(cursor):
 def Q3(cursor):
 	print("\nQuestion 3: Number of Canadian residents that reviewed Mon Ami Gabi in the past year")
 	cursor.execute("select user_id, state, count() from review, business where review.business_id=business.business_id group by user_id,state")
-	rows = cursor.fetchall()
-	df = pd.DataFrame(rows)
+	df = pd.DataFrame(cursor.fetchall())
 	df.columns = ['user', 'state', 'reviews']
 	df['country'] = df.apply(lambda row: 1 if row.state in ['ON', 'AB', 'QC', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'PE', 'SK', 'YT'] else 0, axis=1)
 	with_canadian_review = set(df[df['country']==1]['user'])
@@ -70,7 +67,7 @@ def Q3(cursor):
 	cursor.execute("select user_id,date from review where business_id in (select business_id from business where name='Mon Ami Gabi')")
 	df = pd.DataFrame(cursor.fetchall())
 	df.columns = ['user_id', 'date']
-	users=set(df['user_id'])
+	users = set(df['user_id'])
 	df['date'] = df['date'].apply(lambda x: datetime.datetime.strptime(x,'%Y-%m-%d %H:%M:%S'))
 	df = df.groupby(['user_id']).max().reset_index()
 	test=df
@@ -83,12 +80,9 @@ def Q3(cursor):
 def Q4(cursor):
 	print("\nQuestion 4: Most common words in the business Chipotle Mexican Grill")
 	cursor.execute("select text from review where business_id in (select business_id from business where name='Chipotle Mexican Grill')")
-	rows = cursor.fetchall()
-	df = pd.DataFrame(rows)
-	df.columns = ['text']
-	
-	allReviews = df['text'].tolist()
-	# Turn into a list of all the words used, split by spaces
+
+	allReviews = list(map(lambda x: x[0],cursor.fetchall()))
+
 	allWords = reduce(lambda x,y: x+y, map(lambda x: x.split(), allReviews))
 	allWords = map(lambda x: x.lower().replace(".","")
 									  .replace(",","")
