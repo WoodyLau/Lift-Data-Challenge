@@ -2,18 +2,26 @@ import sqlite3
 from sqlite3 import Error
 import pandas as pd
 from functools import reduce
+import time
 import re
 import scipy.stats
+import pickle
 
 def main():
 	conn = connect()
 	cursor = conn.cursor()
+	pd.set_option('mode.chained_assignment',None)
 	
-	user = '-Yz2wIcsdJxUOFMbTgoKQA'
-	
-	torontonians = get_torontonians(cursor)
-	vegas_restaurants = get_vegas_restaurants(cursor)
-	general_score = general_torontonian_view(cursor,torontonians,vegas_restaurants)
+	user = 'LynSAaDEr7OGtTVL5kedlg'
+	#torontonians = get_torontonians(cursor)
+	#pickle.dump(torontonians,open('torontonians.p','wb'))
+	torontonians = pickle.load(open('torontonians.p','rb'))
+	#vegas_restaurants = get_vegas_restaurants(cursor)
+	#pickle.dump(vegas_restaurants,open('vegas_restaurants.p','wb'))
+	vegas_restaurants = pickle.load(open('vegas_restaurants.p','rb'))
+	#general_score = general_torontonian_view(cursor,torontonians,vegas_restaurants)
+	#general_score.to_pickle("general_score.p")
+	general_score = pd.read_pickle('general_score.p')
 	personal_score = personal_view(cursor,user,vegas_restaurants)
 	print(aggregate_scorer(cursor,general_score,personal_score, user))
 	
@@ -29,12 +37,11 @@ def connect():
 	return conn
 
 def get_torontonians(cursor):
-	only_toronto = "select distinct(user_id) from review,business where review.business_id=business.business_id and city like '%Toronto%' and state='ON'"
-	cursor.execute("select user_id, city, count() from review, business where review.business_id=business.business_id and user_id in (%s) group by user_id,city"%(only_toronto))
+	cursor.execute("select user_id, city, state, count() from review, business where review.business_id=business.business_id group by user_id,city,state")
 	df = pd.DataFrame(cursor.fetchall())
-	df.columns = ['user', 'city', 'reviews']
+	df.columns = ['user', 'city', 'state', 'reviews']
 	r = re.compile(r'.*[tT]oronto.*')
-	df['toronto'] = df.city.apply(lambda row: bool(r.match(row)))
+	df['toronto'] = df.apply(lambda row: bool(r.match(row.city)) and row.state=='ON', axis=1)
 	user_cities = df.groupby(['user','toronto']).sum().reset_index()
 	possible_torontonian = user_cities[['user']].drop_duplicates()
 	possible_torontonian = pd.merge(user_cities[user_cities['toronto']==1],possible_torontonian,on='user')[['user','reviews']].rename(columns={'reviews':'toronto_reviews'})
@@ -63,15 +70,26 @@ def personal_view(cursor, user_id,restaurants):
 	cursor.execute("select cast(review.stars as real) as value,categories from review,business where review.business_id=business.business_id and user_id='"+user_id+"' and categories like '%Restaurants%' and value>=3")
 	df = pd.DataFrame(cursor.fetchall())
 	df.columns = ['stars', 'categories']
+	
 	five_stars = df[df['stars']==5]
 	four_stars = df[df['stars']==4]
 	three_stars = df[df['stars']==3]
-	five_stars['categories']=five_stars['categories'].apply(lambda x: x.split(', '))
-	four_stars['categories']=four_stars['categories'].apply(lambda x: x.split(', '))
-	three_stars['categories']=three_stars['categories'].apply(lambda x: x.split(', '))
-	five_star_categories = set(reduce(lambda x,y: x+y, five_stars['categories']))
-	four_star_categories = set(reduce(lambda x,y: x+y, four_stars['categories']))
-	three_star_categories = set(reduce(lambda x,y: x+y, three_stars['categories']))
+	five_stars['categories']=five_stars['categories'].apply(lambda x: x.split(', ') if len(x)>0 else 'Restaurants')
+	four_stars['categories']=four_stars['categories'].apply(lambda x: x.split(', ') if len(x)>0 else 'Restaurants')
+	three_stars['categories']=three_stars['categories'].apply(lambda x: x.split(', ') if len(x)>0 else 'Restaurants')
+	
+	if len(five_stars)>0:
+		five_star_categories = set(reduce(lambda x,y: x+y, five_stars['categories']))
+	else:
+		five_star_categories = set()
+	if len(four_stars)>0:
+		four_star_categories = set(reduce(lambda x,y: x+y, four_stars['categories']))
+	else:
+		four_star_categories = set()
+	if len(three_stars)>0:
+		three_star_categories = set(reduce(lambda x,y: x+y, three_stars['categories']))
+	else:
+		three_star_categories = set()
 	
 	cursor.execute("select business_id,cast(stars as real) as value,categories from business where business_id in (%s) and value>=3"%formatted_restaurants)
 	df = pd.DataFrame(cursor.fetchall())
@@ -92,7 +110,6 @@ def aggregate_scorer(cursor, general_score, personal_score, user_id):
 	count = int(cursor.fetchall()[0][0])
 	
 	proportion = min(count*0.08, 0.8)
-	
 	scores = pd.merge(general_score,personal_score, on='business_id').fillna(0)
 	scores['aggregate_score'] = scores.apply(lambda row: row['rating']*proportion+row['stars']*(1-proportion), axis=1) 
 	

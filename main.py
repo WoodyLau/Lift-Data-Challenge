@@ -30,7 +30,7 @@ def connect():
 
 def Q2(cursor):
 	print("\nQuestion 2: Top 10 restaurants in Toronto with the highest popularity")
-	cursor.execute("select name,CAST(stars as REAL), CAST(review_count as int) from business where city='Toronto' and categories like '%Restaurants%'")
+	cursor.execute("select name,CAST(stars as REAL), CAST(review_count as int) from business where city like '%Toronto%' and state='ON' and categories like '%Restaurants%'")
 	df = pd.DataFrame(cursor.fetchall())
 	df.columns = ['name', 'stars', 'reviews']
 	
@@ -48,33 +48,33 @@ def Q2(cursor):
 	
 def Q3(cursor):
 	print("\nQuestion 3: Number of Canadian residents that reviewed Mon Ami Gabi in the past year")
+	
 	cursor.execute("select user_id, state, count() from review, business where review.business_id=business.business_id group by user_id,state")
 	df = pd.DataFrame(cursor.fetchall())
 	df.columns = ['user', 'state', 'reviews']
+	
 	df['country'] = df.apply(lambda row: 1 if row.state in ['ON', 'AB', 'QC', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'PE', 'SK', 'YT'] else 0, axis=1)
 	with_canadian_review = set(df[df['country']==1]['user'])
 	df = df[df['user'].isin(with_canadian_review)]
 	user_countries = df.groupby(['user','country']).sum().reset_index()
-	possible_canadians=user_countries[['user']].drop_duplicates()
+	
+	possible_canadians = user_countries[['user']]
 	possible_canadians = pd.merge(user_countries[user_countries['country']==1],possible_canadians,on='user')[['user','reviews']].rename(columns={'reviews':'canadian_reviews'})
 	possible_canadians = pd.merge(user_countries[user_countries['country']==0],possible_canadians,on='user')[['user','canadian_reviews','reviews']].rename(columns={'reviews':'not_canadian_reviews'})
 	possible_canadians['proportion'] = possible_canadians['canadian_reviews']/(possible_canadians['canadian_reviews']+possible_canadians['not_canadian_reviews'])
-	canadians = set(possible_canadians[possible_canadians['proportion']>0]['user'])
-
+	canadians = set(possible_canadians[possible_canadians['proportion']>0.1]['user'])
+	
 	date = datetime.datetime.now() - datetime.timedelta(days=365)
 	date.strftime('%Y-%m-%d')
 	
 	cursor.execute("select user_id,date from review where business_id in (select business_id from business where name='Mon Ami Gabi')")
 	df = pd.DataFrame(cursor.fetchall())
 	df.columns = ['user_id', 'date']
-	users = set(df['user_id'])
 	df['date'] = df['date'].apply(lambda x: datetime.datetime.strptime(x,'%Y-%m-%d %H:%M:%S'))
 	df = df.groupby(['user_id']).max().reset_index()
-	test=df
 	df = df[(df['date'] > date) & (df['user_id'].isin(canadians))]
-	
 	numberUsers = len(df.index)
-	
+
 	print(numberUsers)
 	
 def Q4(cursor):
@@ -111,7 +111,6 @@ def Q5(cursor):
 	all = list(map(lambda x: x[0],cursor.fetchall()))
 	totalBusiness = len(all)
 	users = "'"+ "', '".join(all) + "'"
-	
 
 	ONBusinesses = "select distinct(business_id) from business where state='ON' and categories like '%Restaurants%'"
 	
@@ -119,6 +118,7 @@ def Q5(cursor):
 	cursor.execute("select user_id,business_id from review where (user_id in (%s)) and (business_id in (%s))"%(users,ONBusinesses))
 	df = pd.DataFrame(cursor.fetchall()).drop_duplicates()
 	df.columns = ['user_id','business_id']
+
 	counts = df.user_id.value_counts()
 	count = float(len(counts[counts >= 10].index))
 	
