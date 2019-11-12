@@ -6,23 +6,30 @@ import time
 import re
 import scipy.stats
 import pickle
+from collections import Counter
 
 def main():
 	conn = connect()
 	cursor = conn.cursor()
 	pd.set_option('mode.chained_assignment',None)
 	
-	user = 'LynSAaDEr7OGtTVL5kedlg'
+	user = 'lbNoTuRiQFaIhLNLo9ouDg'
+	
 	#torontonians = get_torontonians(cursor)
 	#pickle.dump(torontonians,open('torontonians.p','wb'))
 	torontonians = pickle.load(open('torontonians.p','rb'))
+	
 	#vegas_restaurants = get_vegas_restaurants(cursor)
 	#pickle.dump(vegas_restaurants,open('vegas_restaurants.p','wb'))
 	vegas_restaurants = pickle.load(open('vegas_restaurants.p','rb'))
+	
 	#general_score = general_torontonian_view(cursor,torontonians,vegas_restaurants)
 	#general_score.to_pickle("general_score.p")
 	general_score = pd.read_pickle('general_score.p')
-	personal_score = personal_view(cursor,user,vegas_restaurants)
+	
+	#personal_score = personal_view(cursor,user,vegas_restaurants)
+	personal_score = personal_view2(cursor,user,vegas_restaurants)
+	
 	print(aggregate_scorer(cursor,general_score,personal_score, user))
 	
 	conn.close()
@@ -90,6 +97,15 @@ def personal_view(cursor, user_id,restaurants):
 		three_star_categories = set(reduce(lambda x,y: x+y, three_stars['categories']))
 	else:
 		three_star_categories = set()
+		
+	def category_summer(categories, dictionary):
+		sum = 0
+		for category in categories:
+			try:
+				sum += dictionary[category]
+			except:
+				sum += 0
+		return sum
 	
 	cursor.execute("select business_id,cast(stars as real) as value,categories from business where business_id in (%s) and value>=3"%formatted_restaurants)
 	df = pd.DataFrame(cursor.fetchall())
@@ -101,9 +117,70 @@ def personal_view(cursor, user_id,restaurants):
 	
 	df['rating'] = df.apply(lambda x: max(5*x.five_intersection*x.stars,4*x.four_intersection*x.stars,3*x.three_intersection*x.stars), axis=1)
 	
+	if df.rating.max()!=df.rating.min():
+		df['rating'] = (df.rating-df.rating.min())/(df.rating.max()-df.rating.min())
+	else:
+		df['rating'] = 2.5
+	
 	final = df[['business_id','rating']]
 	
 	return final
+	
+	
+def personal_view2(cursor, user_id,restaurants):
+	formatted_restaurants = "'"+"','".join(restaurants)+"'"
+	cursor.execute("select cast(review.stars as real) as value,categories from review,business where review.business_id=business.business_id and user_id='"+user_id+"' and categories like '%Restaurants%' and value>=3")
+	df = pd.DataFrame(cursor.fetchall())
+	df.columns = ['stars', 'categories']
+	
+	five_stars = df[df['stars']==5]
+	four_stars = df[df['stars']==4]
+	three_stars = df[df['stars']==3]
+	five_stars['categories']=five_stars['categories'].apply(lambda x: x.split(', ') if len(x)>0 else 'Restaurants')
+	four_stars['categories']=four_stars['categories'].apply(lambda x: x.split(', ') if len(x)>0 else 'Restaurants')
+	three_stars['categories']=three_stars['categories'].apply(lambda x: x.split(', ') if len(x)>0 else 'Restaurants')
+	
+	if len(five_stars)>0:
+		five_star_categories = Counter(reduce(lambda x,y: x+y, five_stars['categories']))
+	else:
+		five_star_categories = {}
+	if len(four_stars)>0:
+		four_star_categories = Counter(reduce(lambda x,y: x+y, four_stars['categories']))
+	else:
+		four_star_categories = {}
+	if len(three_stars)>0:
+		three_star_categories = Counter(reduce(lambda x,y: x+y, three_stars['categories']))
+	else:
+		three_star_categories = {}
+		
+	def category_summer(categories, dictionary):
+		sum = 0
+		for category in categories:
+			try:
+				sum += dictionary[category]
+			except:
+				sum += 0
+		return sum
+	
+	cursor.execute("select business_id,cast(stars as real) as value,categories from business where business_id in (%s) and value>=3"%formatted_restaurants)
+	df = pd.DataFrame(cursor.fetchall())
+	df.columns = ['business_id', 'stars', 'categories']
+	df['categories']=df['categories'].apply(lambda x: x.split(', '))
+	df['five_intersection'] = df['categories'].apply(lambda x: category_summer(x,five_star_categories))
+	df['four_intersection'] = df['categories'].apply(lambda x: category_summer(x,four_star_categories))
+	df['three_intersection'] = df['categories'].apply(lambda x: category_summer(x,three_star_categories))
+	
+	df['rating'] = df.apply(lambda x: max(5*x.five_intersection*x.stars,4*x.four_intersection*x.stars,3*x.three_intersection*x.stars), axis=1)
+	
+	if df.rating.max()!=df.rating.min():
+		df['rating'] = (df.rating-df.rating.min())/(df.rating.max()-df.rating.min())
+	else:
+		df['rating'] = 2.5
+	
+	final = df[['business_id','rating']]
+	
+	return final
+	
 	
 def aggregate_scorer(cursor, general_score, personal_score, user_id):
 	cursor.execute("select count() from review where user_id='"+user_id+"'")
@@ -111,7 +188,7 @@ def aggregate_scorer(cursor, general_score, personal_score, user_id):
 	
 	proportion = min(count*0.08, 0.8)
 	scores = pd.merge(general_score,personal_score, on='business_id').fillna(0)
-	scores['aggregate_score'] = scores.apply(lambda row: row['rating']*proportion+row['stars']*(1-proportion), axis=1) 
+	scores['aggregate_score'] = scores.apply(lambda row: 5*row['rating']*proportion+row['stars']*(1-proportion), axis=1) 
 	
 	final = scores.sort_values(by='aggregate_score', ascending=False).head(5)
 	final_businesses = "'"+"','".join(list(final['business_id']))+"'"
